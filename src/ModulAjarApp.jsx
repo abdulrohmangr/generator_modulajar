@@ -201,9 +201,7 @@ async function callClaude(prompt, systemPrompt, maxTokens = 4000) {
   // Pakai proxy /api/chat di Vercel agar API key aman di server
   const isLocalhost = typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-  const endpoint = isLocalhost
-    ? "https://api.anthropic.com/v1/messages"
-    : "/api/chat";
+const endpoint = "/api/chat";
 
   const res = await fetch(endpoint, {
     method: "POST",
