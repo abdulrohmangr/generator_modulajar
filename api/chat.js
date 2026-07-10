@@ -41,15 +41,24 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}: ${data?.error?.message || JSON.stringify(data).slice(0, 200)}`
+          );
+        }
+
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) {
+          // Cek kemungkinan diblokir safety filter, dsb.
+          const reason =
+            data.promptFeedback?.blockReason ||
+            data.candidates?.[0]?.finishReason ||
+            "tidak diketahui";
+          throw new Error(`Tidak ada teks dalam respons Gemini (alasan: ${reason})`);
+        }
+
         return {
-          content: [
-            {
-              type: "text",
-              text:
-                data.candidates?.[0]?.content?.parts?.[0]?.text ||
-                "Tidak ada respon",
-            },
-          ],
+          content: [{ type: "text", text }],
         };
       },
     },
@@ -81,13 +90,19 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}: ${data?.error?.message || JSON.stringify(data).slice(0, 200)}`
+          );
+        }
+
+        const text = data.choices?.[0]?.message?.content;
+        if (!text) {
+          throw new Error("Tidak ada teks dalam respons DeepSeek");
+        }
+
         return {
-          content: [
-            {
-              type: "text",
-              text: data.choices[0].message.content,
-            },
-          ],
+          content: [{ type: "text", text }],
         };
       },
     },
@@ -119,13 +134,19 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}: ${data?.error?.message || JSON.stringify(data).slice(0, 200)}`
+          );
+        }
+
+        const text = data.choices?.[0]?.message?.content;
+        if (!text) {
+          throw new Error("Tidak ada teks dalam respons Groq");
+        }
+
         return {
-          content: [
-            {
-              type: "text",
-              text: data.choices[0].message.content,
-            },
-          ],
+          content: [{ type: "text", text }],
         };
       },
     },
@@ -147,30 +168,45 @@ export default async function handler(req, res) {
           }
         );
 
-        return await response.json();
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}: ${data?.error?.message || JSON.stringify(data).slice(0, 200)}`
+          );
+        }
+
+        const hasText = (data.content || []).some((b) => b.type === "text" && b.text);
+        if (!hasText) {
+          throw new Error("Tidak ada teks dalam respons Claude");
+        }
+
+        return data;
       },
     },
   ];
 
-  let lastError = "";
+  const errors = [];
 
   for (const provider of providers) {
-    if (!provider.key) continue;
+    if (!provider.key) {
+      errors.push(`${provider.name}: env var API key tidak ditemukan (dilewati)`);
+      continue;
+    }
 
     try {
-      console.log("Menggunakan :", provider.name);
-
+      console.log("Mencoba provider:", provider.name);
       const result = await provider.call();
-
+      console.log("Berhasil pakai:", provider.name);
       return res.status(200).json(result);
     } catch (e) {
-      console.log(provider.name, e.message);
-      lastError = e.message;
+      console.log(`${provider.name} gagal:`, e.message);
+      errors.push(`${provider.name}: ${e.message}`);
     }
   }
 
   return res.status(500).json({
     error: "Semua AI gagal.",
-    detail: lastError,
+    detail: errors.join(" | "),
   });
 }
